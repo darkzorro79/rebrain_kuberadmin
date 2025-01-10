@@ -1,0 +1,33 @@
+---
+- name: Предварительная настройка всех серверов
+  hosts: all
+  become: true
+  tags:
+    - prerequisites
+  tasks:
+    - name: Обновление кэша apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Установка общих зависимостей
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - acl
+          - sudo
+          - curl
+          - ca-certificates
+        state: present
+
+- name: Настройка ETCD кластера
+  hosts: rebrain_etcd
+  become: true
+  gather_facts: true
+  roles:
+    - etcd
+  tags:
+    - etcd
+

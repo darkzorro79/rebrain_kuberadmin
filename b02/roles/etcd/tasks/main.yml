@@ -1,0 +1,157 @@
+---
+# Локальные таски для генерации сертификатов
+- name: Generate certificates locally
+  import_tasks: local_certificates.yml
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# Таски для установки etcd на целевых нодах
+- block:
+    - name: Создание группы etcd
+      group:
+        name: etcd
+        system: yes
+        gid: 1100
+        state: present
+
+    - name: Создание пользователя etcd
+      user:
+        name: etcd
+        system: yes
+        shell: /sbin/nologin
+        group: etcd
+        uid: 1100
+        home: /var/lib/etcd
+        state: present
+
+    - name: Создание временной директории для загрузки
+      file:
+        path: /tmp/etcd-download
+        state: directory
+        mode: '0755'
+
+    - include_tasks: deploy_certificates.yml
+
+    - name: Загрузка и распаковка etcd {{ etcd_version }}
+      unarchive:
+        src: "https://github.com/etcd-io/etcd/releases/download/{{ etcd_version }}/etcd-{{ etcd_version }}-linux-amd64.tar.gz"
+        dest: /tmp/etcd-download
+        remote_src: yes
+
+    - name: Копирование бинарных файлов etcd
+      copy:
+        src: "/tmp/etcd-download/etcd-{{ etcd_version }}-linux-amd64/{{ item }}"
+        dest: /usr/local/bin/
+        mode: '0755'
+        remote_src: yes
+      loop:
+        - etcd
+        - etcdctl
+
+    - name: Создание конфигурационного каталога etcd
+      file:
+        path: /etc/etcd
+        state: directory
+        mode: '0755'
+
+    - name: Настройка конфигурации etcd
+      template:
+        src: etcd.env.j2
+        dest: /etc/etcd/etcd.env
+        mode: '0644'
+      register: etcd_config
+      notify: restart etcd
+
+    - name: Создание systemd сервиса для etcd
+      template:
+        src: etcd.service.j2
+        dest: /etc/systemd/system/etcd.service
+        mode: '0644'
+      notify: restart etcd
+
+    - name: Создание скрипта для загрузки переменных etcd
+      copy:
+        dest: /etc/profile.d/etcd.sh
+        content: |
+          #!/bin/bash
+          # Загружаем только переменные etcd, но не etcdctl
+          while IFS= read -r line; do
+            [[ "$line" =~ ^#.*$ ]] && continue
+            [[ -z "$line" ]] && continue
+            [[ "$line" =~ ^ETCDCTL_ ]] && continue
+            export "$line"
+          done < /etc/etcd/etcd.env
+        mode: '0755'
+
+    - name: Создание sudoers файла для сохранения переменных окружения
+      copy:
+        dest: /etc/sudoers.d/etcd
+        content: |
+          Defaults env_keep += "ETCDCTL_API"
+          Defaults env_keep += "ETCDCTL_ENDPOINTS"
+          Defaults env_keep += "ETCDCTL_CACERT"
+          Defaults env_keep += "ETCDCTL_CERT"
+          Defaults env_keep += "ETCDCTL_KEY"
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Создание systemd environment файла
+      copy:
+        dest: /etc/default/etcdctl
+        content: |
+          ETCDCTL_API=3
+          ETCDCTL_ENDPOINTS=https://127.0.0.1:2379
+          ETCDCTL_CACERT=/etc/ssl/etcd/ssl/ca.pem
+          {% set node_number = inventory_hostname | regex_replace('^.*-([0-9]+)$', '\\1') %}
+          ETCDCTL_CERT=/etc/ssl/etcd/ssl/client{{ node_number }}.pem
+          ETCDCTL_KEY=/etc/ssl/etcd/ssl/client{{ node_number }}-key.pem
+        mode: '0644'
+
+    - name: Применение переменных окружения
+      shell: source /etc/profile.d/etcd.sh && export -p
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Включение и запуск сервиса etcd
+      systemd:
+        name: etcd
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Ожидание запуска etcd
+      wait_for:
+        port: "{{ etcd_client_port }}"
+        delay: 10
+
+    - name: Изменение INITIAL_CLUSTER_STATE на existing
+      replace:
+        path: /etc/etcd/etcd.env
+        regexp: '^ETCD_INITIAL_CLUSTER_STATE=new'
+        replace: 'ETCD_INITIAL_CLUSTER_STATE=existing'
+      notify: restart etcd
+
+    - name: Очистка временных файлов
+      file:
+        path: /tmp/etcd-download
+        state: absent
+
+    - name: Установка правильных прав на директорию данных etcd
+      file:
+        path: /var/lib/etcd
+        state: directory
+        owner: etcd
+        group: etcd
+        mode: '0700'
+
+    - name: Перезапуск etcd после изменения конфигурации
+      systemd:
+        name: etcd
+        state: restarted
+        daemon_reload: yes
+      when: etcd_config.changed or etcd_service.changed
+
+  become: true
+  when: inventory_hostname in groups['rebrain_etcd']

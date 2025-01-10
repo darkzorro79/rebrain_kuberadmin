@@ -1,0 +1,24 @@
+- name: Create ssl directory on nodes
+  file:
+    path: /etc/ssl/etcd/ssl
+    state: directory
+    mode: '0755'
+
+- name: Copy CA certificate to nodes (without key)
+  copy:
+    src: "{{ role_path }}/files/certs/ca.pem"
+    dest: "/etc/ssl/etcd/ssl/ca.pem"
+    mode: '0644'
+
+- name: Copy node certificates
+  copy:
+    src: "{{ role_path }}/files/certs/{{ item }}"
+    dest: "/etc/ssl/etcd/ssl/{{ item }}"
+    mode: '0644'
+  loop:
+    - "server{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}.pem"
+    - "server{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}-key.pem"
+    - "member{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}.pem"
+    - "member{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}-key.pem"
+    - "client{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}.pem"
+    - "client{{ inventory_hostname | regex_replace('^.*([0-9]+)$', '\\1') }}-key.pem" 

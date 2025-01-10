@@ -1,0 +1,76 @@
+- name: Create local temp directory for certificates
+  local_action:
+    module: file
+    path: "{{ role_path }}/files/certs"
+    state: directory
+    mode: '0755'
+  run_once: true
+
+- name: Generate CA certificate locally
+  local_action:
+    module: shell
+    cmd: |
+      cd {{ role_path }}/files/certs
+      cfssl gencert -initca ../ca-request.json | cfssljson -bare ca
+  args:
+    creates: "{{ role_path }}/files/certs/ca.pem"
+  run_once: true
+
+- name: Create temp config directory
+  local_action:
+    module: file
+    path: "{{ role_path }}/files/certs/temp"
+    state: directory
+    mode: '0755'
+  run_once: true
+
+- name: Generate node specific config
+  local_action:
+    module: template
+    src: "server.json.j2"
+    dest: "{{ role_path }}/files/certs/temp/{{ item }}-server.json"
+  loop: "{{ groups['rebrain_etcd'] }}"
+  run_once: true
+
+- name: Generate certificates for each etcd node
+  local_action:
+    module: shell
+    cmd: |
+      cd {{ role_path }}/files/certs
+      # Получаем номер ноды
+      {% set node_number = hostvars[item]['inventory_hostname'] | regex_replace('^.*-([0-9]+)$', '\\1') %}
+      
+      # Server cert
+      cfssl gencert \
+        -ca=ca.pem \
+        -ca-key=ca-key.pem \
+        -config=../ca.json \
+        -profile=server \
+        -hostname="127.0.0.1,{{ hostvars[item]['local_ip'] }},{{ item }}" \
+        temp/{{ item }}-server.json | cfssljson -bare server{{ node_number }}
+      
+      # Member cert
+      cfssl gencert \
+        -ca=ca.pem \
+        -ca-key=ca-key.pem \
+        -config=../ca.json \
+        -profile=member \
+        -hostname="{{ hostvars[item]['local_ip'] }},{{ item }}" \
+        temp/{{ item }}-server.json | cfssljson -bare member{{ node_number }}
+      
+      # Client cert
+      cfssl gencert \
+        -ca=ca.pem \
+        -ca-key=ca-key.pem \
+        -config=../ca.json \
+        -profile=client \
+        temp/{{ item }}-server.json | cfssljson -bare client{{ node_number }}
+  loop: "{{ groups['rebrain_etcd'] }}"
+  run_once: true
+
+- name: Clean up temp directory
+  local_action:
+    module: file
+    path: "{{ role_path }}/files/certs/temp"
+    state: absent
+  run_once: true 

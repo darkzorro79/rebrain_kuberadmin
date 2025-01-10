@@ -1,0 +1,18 @@
+{
+    "CN": "kropalik.local",
+    "hosts": [
+        "kropalik.local",
+        "ca.kropalik.local"
+    ],
+    "key": {
+        "algo": "ecdsa",
+        "size": 256
+    },
+    "names": [
+        {
+            "C": "RU",
+            "ST": "Moscow",
+            "L": "Moscow"
+        }
+    ]
+}

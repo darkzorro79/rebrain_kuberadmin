@@ -1,0 +1,3 @@
+# Исключить все файлы из files/certs/
+b02/files/certs/*
+

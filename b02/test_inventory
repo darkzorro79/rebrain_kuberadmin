@@ -1,0 +1,5 @@
+[rebrain_etcd]
+etcd-1 ansible_host=89.169.138.87 ansible_user=user ansible_become=true ansible_ssh_private_key_file=/home/kirill/.ssh/id_rsa ansible_python_interpreter=/usr/bin/python3 member=etcd-member-node1 local_ip=10.128.0.26
+etcd-2 ansible_host=158.160.43.112 ansible_user=user ansible_become=true ansible_ssh_private_key_file=/home/kirill/.ssh/id_rsa ansible_python_interpreter=/usr/bin/python3 member=etcd-member-node2 local_ip=10.128.0.11
+etcd-3 ansible_host=84.201.174.72 ansible_user=user ansible_become=true ansible_ssh_private_key_file=/home/kirill/.ssh/id_rsa ansible_python_interpreter=/usr/bin/python3 member=etcd-member-node3 local_ip=10.128.0.16
+
